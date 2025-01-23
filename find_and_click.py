@@ -1,6 +1,7 @@
 import telebot
 import pandas as pd
 import gdown
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # tooken
 bot = telebot.TeleBot('7887269574:AAHuMtBxFodbtiJ1utONahWNTPx0hb62jRg')
@@ -10,18 +11,14 @@ file_ids = {
     'students': '1XvtlovXxrYSK0rfwSDicLa6895loXgWz',
     'topics': '17LQ-z0qRQHjuXHh6OBucnFP0L-4yDHip',
     'schedule': '1hHgJHulaCCP5BU39V-DITHryqSGN54Yo',
-    'attendance': '1v2_ud3ibpzAgmF_vJ7VLv-RnbflBcXFJ',
-    'homework': '1_mfyE2wh8_j-aucuwxBrYk33oDOBj0Xr',
-    'homework6': '1-UpX65wTexXEz_S6EaRhvAq15QIQJnKe'
+    'attendance': '1v2_ud3ibpzAgmF_vJ7VLv-RnbflBcXFJ'
 }
 
 output_paths = {
     'students': 'C:/Users/oxot5/Downloads/Отчет по студентам.xlsx',
     'topics': 'C:/Users/oxot5/Downloads/Отчет по темам занятий.xlsx',
     'schedule': 'C:/Users/oxot5/Downloads/Расписание группы.xlsx',
-    'attendance': 'C:/Users/oxot5/Downloads/Отчет по посещаемости студентов.xlsx',
-    'homework': 'C:/Users/oxot5/Downloads/Отчет по домашним заданиям.xlsx',
-    'homework6': 'C:/Users/oxot5/Downloads/Отчет по дз (6 задание).xlsx'
+    'attendance': 'C:/Users/oxot5/Downloads/Отчет по посещаемости студентов.xlsx'
 }
 
 def load_data(file_type):
@@ -32,11 +29,34 @@ def load_data(file_type):
     df = pd.read_excel(output_path)
     return df
 
+def create_keyboard():
+    markup = InlineKeyboardMarkup()
+    markup.row_width = 2
+    markup.add(InlineKeyboardButton("Пары", callback_data="pairs"),
+               InlineKeyboardButton("Темы", callback_data="topics"),
+               InlineKeyboardButton("Расписание", callback_data="schedule"),
+               InlineKeyboardButton("Посещаемость", callback_data="attendance"))
+    return markup
+
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, 'Пиши /pairs, /topics, /schedule, /attendance, /homework или /homework6')
+    bot.send_message(message.chat.id, "Выберите команду:", reply_markup=create_keyboard())
 
-@bot.message_handler(commands=['pairs'])
+@bot.message_handler(func=lambda message: True)
+def handle_all_messages(message):
+    bot.send_message(message.chat.id, "Выберите команду:", reply_markup=create_keyboard())
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    if call.data == "pairs":
+        pairs(call.message)
+    elif call.data == "topics":
+        topics(call.message)
+    elif call.data == "schedule":
+        schedule(call.message)
+    elif call.data == "attendance":
+        attendance(call.message)
+
 def pairs(message):
     try:
         df = load_data('students')
@@ -48,7 +68,6 @@ def pairs(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"Произошла ошибка: {str(e)}")
 
-@bot.message_handler(commands=['topics'])
 def topics(message):
     try:
         df = load_data('topics')
@@ -60,7 +79,6 @@ def topics(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"Произошла ошибка: {str(e)}")
 
-@bot.message_handler(commands=['schedule'])
 def schedule(message):
     try:
         df = load_data('schedule')
@@ -80,7 +98,6 @@ def schedule(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"Произошла ошибка: {str(e)}")
 
-@bot.message_handler(commands=['attendance'])
 def attendance(message):
     try:
         df = load_data('attendance')
@@ -95,71 +112,9 @@ def attendance(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"Произошла ошибка: {str(e)}")
 
-@bot.message_handler(commands=['homework'])
-def homework(message):
-    try:
-        df = load_data('homework')
-        response = "Домашние задания:\n"
-        for index, row in df.iterrows():
-            response += f"Форма обучения: {row['Форма обучения']}\n"
-            response += f"ФИО преподавателя: {row['ФИО преподавателя']}\n"
-            response += f"Месяц: {row['Месяц']}\n"
-            response += f"Неделя 1:\n"
-            response += f"  Кол-во пар: {row['Кол-во пар']}\n"
-            response += f"  Выдано: {row['Выдано']}\n"
-            response += f"  Получено: {row['Получено']}\n"
-            response += f"  Проверено: {row['Проверено']}\n"
-            response += f"  План: {row['План']}\n"
-            response += f"Неделя 2:\n"
-            response += f"  Кол-во пар: {row['Кол-во пар.1']}\n"
-            response += f"  Выдано: {row['Выдано.1']}\n"
-            response += f"  Получено: {row['Получено.1']}\n"
-            response += f"  Проверено: {row['Проверено.1']}\n"
-            response += f"  План: {row['План.1']}\n"
-            response += f"Неделя 3:\n"
-            response += f"  Кол-во пар: {row['Кол-во пар.2']}\n"
-            response += f"  Выдано: {row['Выдано.2']}\n"
-            response += f"  Получено: {row['Получено.2']}\n"
-            response += f"  Проверено: {row['Проверено.2']}\n"
-            response += f"  План: {row['План.2']}\n\n"
-        bot.send_message(message.chat.id, response)
-    except Exception as e:
-        bot.send_message(message.chat.id, f"Произошла ошибка: {str(e)}")
-
-@bot.message_handler(commands=['homework6'])
-def homework6(message):
-    try:
-        df = load_data('homework6')
-        response = "Домашние задания (6 задание):\n"
-        for index, row in df.iterrows():
-            response += f"Форма обучения: {row['Форма обучения']}\n"
-            response += f"ФИО преподавателя: {row['ФИО преподавателя']}\n"
-            response += f"Месяц: {row['Месяц']}\n"
-            response += f"Неделя 1:\n"
-            response += f"  Кол-во пар: {row['Кол-во пар']}\n"
-            response += f"  Выдано: {row['Выдано']}\n"
-            response += f"  Получено: {row['Получено']}\n"
-            response += f"  Проверено: {row['Проверено']}\n"
-            response += f"  План: {row['План']}\n"
-            response += f"Неделя 2:\n"
-            response += f"  Кол-во пар: {row['Кол-во пар.1']}\n"
-            response += f"  Выдано: {row['Выдано.1']}\n"
-            response += f"  Получено: {row['Получено.1']}\n"
-            response += f"  Проверено: {row['Проверено.1']}\n"
-            response += f"  План: {row['План.1']}\n"
-            response += f"Неделя 3:\n"
-            response += f"  Кол-во пар: {row['Кол-во пар.2']}\n"
-            response += f"  Выдано: {row['Выдано.2']}\n"
-            response += f"  Получено: {row['Получено.2']}\n"
-            response += f"  Проверено: {row['Проверено.2']}\n"
-            response += f"  План: {row['План.2']}\n\n"
-        bot.send_message(message.chat.id, response)
-    except Exception as e:
-        bot.send_message(message.chat.id, f"Произошла ошибка: {str(e)}")
-
 @bot.message_handler(commands=['help'])
 def help_command(message):
     bot.send_message(message.chat.id,
-                     'Доступные команды:\n/start - начать работу с ботом\n/pairs - вывести количество пар по группам\n/topics - вывести темы занятий по группам\n/schedule - вывести расписание группы\n/attendance - вывести посещаемость студентов\n/homework - вывести домашние задания\n/homework6 - вывести домашние задания (6 задание)')
+                     'Доступные команды:\n/start - начать работу с ботом\n/pairs - вывести количество пар по группам\n/topics - вывести темы занятий по группам\n/schedule - вывести расписание группы\n/attendance - вывести посещаемость студентов')
 
 bot.polling(none_stop=True)
