@@ -2,141 +2,111 @@ import telebot
 import pandas as pd
 import gdown
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 # TOKEN
 bot = telebot.TeleBot('7887269574:AAHuMtBxFodbtiJ1utONahWNTPx0hb62jRg')
+
 # ID
 file_ids = {
     'students': '1XvtlovXxrYSK0rfwSDicLa6895loXgWz',
-    'topics': '17LQ-z0qRQHjuXHh6OBucnFP0L-4yDHip',
-    'schedule': '1hHgJHulaCCP5BU39V-DITHryqSGN54Yo',
-    'attendance': '1v2_ud3ibpzAgmF_vJ7VLv-RnbflBcXFJ'
+    'schedule': '1hHgJHulaCCP5BU39V-DITHryqSGN54Yo'
 }
 output_paths = {
     'students': 'C:/Users/oxot5/Downloads/Отчет по студентам.xlsx',
-    'topics': 'C:/Users/oxot5/Downloads/Отчет по темам занятий.xlsx',
-    'schedule': 'C:/Users/oxot5/Downloads/Расписание группы.xlsx',
-    'attendance': 'C:/Users/oxot5/Downloads/Отчет по посещаемости студентов.xlsx'
+    'schedule': 'C:/Users/oxot5/Downloads/Расписание группы.xlsx'
 }
-# google api
+
+# Функ загрузки данных
 def load_data(file_type):
     file_id = file_ids[file_type]
     file_url = f'https://drive.google.com/uc?export=download&id={file_id}'
     output_path = output_paths[file_type]
     gdown.download(file_url, output_path, quiet=False)
-    df = pd.read_excel(output_path)
+    df = pd.read_excel(output_path, header=0)  # Убедитесь, что заголовки на первой строке
     return df
-# Функ кнопок
-def create_keyboard():
-    markup = InlineKeyboardMarkup()
-    markup.row_width = 2
-    markup.add(InlineKeyboardButton("Пары", callback_data="pairs"),
-               InlineKeyboardButton("Темы", callback_data="topics"),
-               InlineKeyboardButton("Расписание", callback_data="schedule"),
-               InlineKeyboardButton("Посещаемость", callback_data="attendance"))
-    return markup
-# Функ назад
-def create_back_button():
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("Вернуться назад", callback_data="back"))
-    return markup
 
-# /start
-@bot.message_handler(commands=['start'])
-def start(message):
-    send_welcome(message)
-# сообщения
-@bot.message_handler(func=lambda message: True)
-def handle_all_messages(message):
-    send_welcome(message)
-# работа кнопок
-@bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    command_handlers = {
-        "pairs": show_pairs,
-        "topics": show_topics,
-        "schedule": show_schedule,
-        "attendance": show_attendance,
-        "back": send_welcome
-    }
-    handler = command_handlers.get(call.data)
-    if handler:
-        handler(call.message)
-# Функ ответа
-def send_welcome(message):
-    bot.send_message(message.chat.id, "Выберите команду:", reply_markup=create_keyboard())
-def send_response(message, response):
-    bot.send_message(message.chat.id, response, reply_markup=create_back_button())
-# Функ ошибки
-def send_error(message, error):
-    bot.send_message(message.chat.id, f"Произошла ошибка: {str(error)}", reply_markup=create_back_button())
-# Функ колво пар групп
-def show_pairs(message):
+# Функ отправкии сообщений
+def send_chunked_message(chat_id, text, chunk_size=4096):
+    for i in range(0, len(text), chunk_size):
+        bot.send_message(chat_id, text[i:i + chunk_size])
+
+# Анализ отчета по студентам
+def analyze_students_report(message):
     try:
         df = load_data('students')
-        df = df.fillna({'Группа': '', 'pairs in total per month': 0})
-        group_pairs = df.groupby('Группа')['pairs in total per month'].first()
-        response = "Количество пар по группам:\n"
-        for group, pairs in group_pairs.items():
-            response += f"{group} - {pairs}\n"
-        send_response(message, response)
-    except Exception as e:
-        send_error(message, e)
 
-# Функ тем занятий
-def show_topics(message):
-    try:
-        df = load_data('topics')
-        df = df.fillna({'Группа': '', 'Тема урока': ''})
-        group_topics = df.groupby('Группа')['Тема урока'].first()
-        response = "Темы занятий по группам:\n"
-        for group, topics in group_topics.items():
-            response += f"{group} - {topics}\n"
-        send_response(message, response)
-    except Exception as e:
-        send_error(message, e)
+        if df.empty or df.shape[1] <= 17:
+            bot.send_message(message.chat.id, "Данные по студентам пусты или недостаточно столбцов.")
+            return
 
-# Функ для расписания группы
-def show_schedule(message):
+        df['СреднийБал'] = df.iloc[:, 17].apply(lambda x: 0 if x == '-' else float(x))
+        def convert_to_5_scale(score):
+            if score <= 3:
+                return 2
+            elif score <= 6:
+                return 3
+            elif score <= 9:
+                return 4
+            else:
+                return 5
+
+        df['Оценка'] = df['СреднийБал'].apply(convert_to_5_scale)
+        low_average = df[df['Оценка'] < 3]
+
+        response = "Студенты с низким средним баллом:\n"
+        for index, row in low_average.iterrows():
+            response += f"{row.iloc[0]} - Средний балл: {row['Оценка']}\n"
+
+        send_chunked_message(message.chat.id, response if response else "Нет студентов с низким средним баллом.")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Произошла ошибка: {str(e)}")
+
+# Подсчет кколво пар
+def count_classes_by_group(message):
     try:
         df = load_data('schedule')
-        df = df.fillna({'Группа': '', 'Пара': '', 'Время': '', 'Понедельник. 28.10.2024': '', 'Вторник. 29.10.2024': '', 'Среда. 30.10.2024': '', 'Четверг. 31.10.2024': '', 'Пятница. 01.11.2024': '', 'Суббота. 02.11.2024': '', 'Воскресенье. 03.11.2024': ''})
-        response = "Расписание группы:\n"
-        for index, row in df.iterrows():
-            response += f"Группа: {row['Группа']}\n"
-            response += f"Пара: {row['Пара']}\n"
-            response += f"Время: {row['Время']}\n"
-            response += f"Понедельник: {row['Понедельник. 28.10.2024']}\n"
-            response += f"Вторник: {row['Вторник. 29.10.2024']}\n"
-            response += f"Среда: {row['Среда. 30.10.2024']}\n"
-            response += f"Четверг: {row['Четверг. 31.10.2024']}\n"
-            response += f"Пятница: {row['Пятница. 01.11.2024']}\n"
-            response += f"Суббота: {row['Суббота. 02.11.2024']}\n"
-            response += f"Воскресенье: {row['Воскресенье. 03.11.2024']}\n\n"
-        send_response(message, response)
+
+        if df.empty:
+            bot.send_message(message.chat.id, "Данные по расписанию пусты.")
+            return
+        days_of_week = ['Понедельник. 28.10.2024', 'Вторник. 29.10.2024',
+                        'Среда. 30.10.2024', 'Четверг. 31.10.2024',
+                        'Пятница. 01.11.2024', 'Суббота. 02.11.2024',
+                        'Воскресенье. 03.11.2024']
+        all_classes = []
+
+        for day in days_of_week:
+            if day in df.columns:
+                day_classes = df[[df.columns[0], df.columns[1], day]].dropna()
+                day_classes.columns = ['Группа', 'Пара', 'Занятие']
+                all_classes.append(day_classes)
+        all_classes_df = pd.concat(all_classes, ignore_index=True)
+        class_count = all_classes_df['Занятие'].value_counts()
+
+        response = "Количество проведенных пар по дисциплинам:\n"
+        for discipline, count in class_count.items():
+            response += f"{discipline} - {count} пар\n"
+
+        send_chunked_message(message.chat.id, response if response else "Нет данных о парах.")
     except Exception as e:
-        send_error(message, e)
+        bot.send_message(message.chat.id, f"Произошла ошибка: {str(e)}")
 
-# функ для студентов
-def show_attendance(message):
-    try:
-        df = load_data('attendance')
-        df = df.fillna({'ФИО преподавателя': '', 'Колледж': '', 'Средняя посещаемость': 0, 'Всего пар': 0, 'Всего групп': 0})
-        response = "Посещаемость студентов:\n"
-        for index, row in df.iterrows():
-            response += f"ФИО преподавателя: {row['ФИО преподавателя']}\n"
-            response += f"Колледж: {row['Колледж']}\n"
-            response += f"Средняя посещаемость: {row['Средняя посещаемость']}\n"
-            response += f"Всего пар: {row['Всего пар']}\n"
-            response += f"Всего групп: {row['Всего групп']}\n\n"
-        send_response(message, response)
-    except Exception as e:
-        send_error(message, e)
+# меню
+def create_menu():
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("Анализ отчета по студентам", callback_data='analyze_students'))
+    markup.add(InlineKeyboardButton("Подсчет проведенных пар", callback_data='count_classes'))
+    return markup
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    bot.send_message(message.chat.id, "Добро пожаловать! Выберите действие:", reply_markup=create_menu())
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    if call.data == 'analyze_students':
+        analyze_students_report(call.message)
+    elif call.data == 'count_classes':
+        count_classes_by_group(call.message)
 
-# Обработка помощи
-@bot.message_handler(commands=['help'])
-def help_command(message):
-    bot.send_message(message.chat.id,
-                     'Доступные команды:\n/start - начать работу с ботом\n/pairs - вывести количество пар по группам\n/topics - вывести темы заниятий по группам\n/schedule - вывести расписание группы\n/attendance - вывести посещаемость студентов')
-
-# Запуск
-bot.polling(none_stop=True)
+# ЗАПУСК
+if __name__ == "__main__":
+    bot.polling(none_stop=True)
