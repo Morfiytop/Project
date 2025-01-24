@@ -16,16 +16,16 @@ output_paths = {
     'schedule': 'C:/Users/oxot5/Downloads/Расписание группы.xlsx'
 }
 
-# Функ загрузки данных
+# Функ для загрузки данных
 def load_data(file_type):
     file_id = file_ids[file_type]
     file_url = f'https://drive.google.com/uc?export=download&id={file_id}'
     output_path = output_paths[file_type]
     gdown.download(file_url, output_path, quiet=False)
-    df = pd.read_excel(output_path, header=0)  # Убедитесь, что заголовки на первой строке
+    df = pd.read_excel(output_path, header=0)
     return df
 
-# Функ отправкии сообщений
+# Функ для отправки сообщений
 def send_chunked_message(chat_id, text, chunk_size=4096):
     for i in range(0, len(text), chunk_size):
         bot.send_message(chat_id, text[i:i + chunk_size])
@@ -38,10 +38,13 @@ def analyze_students_report(message):
         if df.empty or df.shape[1] <= 17:
             bot.send_message(message.chat.id, "Данные по студентам пусты или недостаточно столбцов.")
             return
+        df['СреднийБал'] = df.iloc[:, 17].apply(lambda x: 0 if x == '-' or pd.isna(x) else float(x))
 
-        df['СреднийБал'] = df.iloc[:, 17].apply(lambda x: 0 if x == '-' else float(x))
+        # Перевод 12 - > 5
         def convert_to_5_scale(score):
-            if score <= 3:
+            if score == 0:
+                return 0
+            elif score <= 3:
                 return 2
             elif score <= 6:
                 return 3
@@ -51,6 +54,8 @@ def analyze_students_report(message):
                 return 5
 
         df['Оценка'] = df['СреднийБал'].apply(convert_to_5_scale)
+
+        # Фильтруем
         low_average = df[df['Оценка'] < 3]
 
         response = "Студенты с низким средним баллом:\n"
@@ -60,8 +65,7 @@ def analyze_students_report(message):
         send_chunked_message(message.chat.id, response if response else "Нет студентов с низким средним баллом.")
     except Exception as e:
         bot.send_message(message.chat.id, f"Произошла ошибка: {str(e)}")
-
-# Подсчет кколво пар
+# Подсчет кол-во пар
 def count_classes_by_group(message):
     try:
         df = load_data('schedule')
@@ -69,6 +73,7 @@ def count_classes_by_group(message):
         if df.empty:
             bot.send_message(message.chat.id, "Данные по расписанию пусты.")
             return
+
         days_of_week = ['Понедельник. 28.10.2024', 'Вторник. 29.10.2024',
                         'Среда. 30.10.2024', 'Четверг. 31.10.2024',
                         'Пятница. 01.11.2024', 'Суббота. 02.11.2024',
@@ -80,6 +85,7 @@ def count_classes_by_group(message):
                 day_classes = df[[df.columns[0], df.columns[1], day]].dropna()
                 day_classes.columns = ['Группа', 'Пара', 'Занятие']
                 all_classes.append(day_classes)
+
         all_classes_df = pd.concat(all_classes, ignore_index=True)
         class_count = all_classes_df['Занятие'].value_counts()
 
@@ -91,15 +97,17 @@ def count_classes_by_group(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"Произошла ошибка: {str(e)}")
 
-# меню
+# Меню
 def create_menu():
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("Анализ отчета по студентам", callback_data='analyze_students'))
     markup.add(InlineKeyboardButton("Подсчет проведенных пар", callback_data='count_classes'))
     return markup
+
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     bot.send_message(message.chat.id, "Добро пожаловать! Выберите действие:", reply_markup=create_menu())
+
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     if call.data == 'analyze_students':
